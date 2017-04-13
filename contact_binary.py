@@ -320,8 +320,8 @@ def unregister():
 if __name__ == "__main__":
 #    register()
 
-    rs = RotatingStar(radius = STELLAR_RADIUS, angular_speed = 3.4125e-4)
-    (points, faces) = rs.make_mesh(1)
-    print()
-    print(points)
+#    rs = RotatingStar(angular_speed=0.0000025) # Sol
+#    rs = RotatingStar(mass=6.7*STELLAR_MASS, radius=7.3*STELLAR_RADIUS, angular_speed=0.0000399) # Achernar
+    rs = RotatingStar(mass=3.8*STELLAR_MASS, radius=2.5*STELLAR_RADIUS, angular_speed=0.000162) # Regulus
+    (points, faces) = rs.make_mesh(10)
     add_mesh("Star", points, faces)
