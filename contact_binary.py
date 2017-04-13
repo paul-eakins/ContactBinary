@@ -8,6 +8,8 @@ STELLAR_RADIUS     = 6.96342E8    # m
 STELLAR_MASS       = 1.98855E30   # kg
 STELLAR_LUMINOSITY = 3.846E26     # W 
 
+MASS_LOSS_FACTOR   = 1.001
+
 def solve(fn, fn_dash, x=0, iteration_limit=20, accuracy=1):
 #    print('solve')
     y = fn(x)
@@ -90,13 +92,13 @@ class MeshGenerator:
         self.points.append(p)
         return n
     
-    def add_row_points(self, x, n, offset):
+    def add_row_points(self, x, rz, n, offset):
         row = []
         
         max_z = solve(
             lambda z : self.surface(x, 0, z), \
             lambda z : self.dp_dz(x, 0, z), \
-            self.initial_estimate)
+            rz)
             
         total = 5*n
         i = 0
@@ -138,6 +140,34 @@ class MeshGenerator:
                 i += 1
  #           print('  - ', face)
             self.faces.append(face)
+            
+
+    def open_cone(self, x0, rx, rz, n):
+        self.row0 = [self.add_point(-rx / STELLAR_RADIUS, 0, 0)]
+        for i in range(1, n+1):
+            theta = i*pi / (3*n)
+            x = x0 - rx * cos(theta)
+            row1 = self.add_row_points(x, rz, i, 0)
+            self.add_row_faces(self.row0, row1)
+            self.row0 = row1
+            
+    def cylinder(self, x0, x1, rz, n):
+        for i in range(1, n+1):
+            x = ((n-i)*x0 + i*x1) / n
+            row1 = self.add_row_points(x, rz, n, i)
+            self.add_row_faces(self.row0, row1)
+            self.row0 = row1
+            
+    def close_cone(self, x0, rx, rz, n):
+        for i in range(1, n):
+            theta = (2*n + i) * pi / (3*n)
+            x = x0 - rx * cos(theta)
+            row1 = self.add_row_points(x, rz, n-i, n-i)
+            self.add_row_faces(self.row0, row1)
+            self.row0 = row1
+        row1 = [self.add_point(rx / STELLAR_RADIUS, 0, 0)]
+        self.add_row_faces(self.row0, row1)
+        self.row0 = None
                   
 
 class RotatingStar(MeshGenerator):
@@ -150,13 +180,13 @@ class RotatingStar(MeshGenerator):
         self.rotation = Rotation(angular_speed)
         self.initial_estimate = radius
         
-        self.surface_potential = self.mass.potential(0, 0, radius)
+        self.surface_potential = self.potential(0, 0, radius)
         if angular_speed > 0:
             synchronous_orbit = pow(G*mass/(angular_speed*angular_speed), 1.0/3.0)
             synchronous_potential = self.potential(synchronous_orbit, 0, 0)
-            if self.surface_potential > 1.001 * synchronous_potential:
-                print('Mass lost due to high rotation speed')
-                self.surface_potential = 1.001 * synchronous_potential
+            if self.surface_potential > MASS_LOSS_FACTOR * synchronous_potential:
+                print('Mass lost at equator due to high rotation speed')
+                self.surface_potential = MASS_LOSS_FACTOR * synchronous_potential
                 self.initial_estimate = synchronous_orbit * 0.6
 
     def potential(self, x, y, z):
@@ -180,27 +210,10 @@ class RotatingStar(MeshGenerator):
             lambda x : self.surface(x, 0, 0), \
             lambda x : self.dp_dx(x, 0, 0), \
             self.initial_estimate)
-
-        row0 = [self.add_point(-max_x / STELLAR_RADIUS, 0, 0)]
-        for i in range(1, n+1):
-            x = -max_x * cos(i*pi / (3*n))
-            row1 = self.add_row_points(x, i, 0)
-            self.add_row_faces(row0, row1)
-            row0 = row1
             
-        for i in range(n+1, 2*n+1):
-            x = -max_x * cos(i*pi / (3*n))
-            row1 = self.add_row_points(x, n, i-n)
-            self.add_row_faces(row0, row1)
-            row0 = row1
-            
-        for i in range(2*n+1, 3*n):
-            x = -max_x * cos(i*pi / (3*n))
-            row1 = self.add_row_points(x, 3*n-i, 3*n-i)
-            self.add_row_faces(row0, row1)
-            row0 = row1
-        row1 = [self.add_point(max_x / STELLAR_RADIUS, 0, 0)]
-        self.add_row_faces(row0, row1) 
+        self.open_cone(0, max_x, self.initial_estimate, n)     
+        self.cylinder(-max_x * cos(pi/3), max_x * cos(pi/3), self.initial_estimate, n)
+        self.close_cone(0, max_x, self.initial_estimate, n)
             
         return (self.points, self.faces)
     
