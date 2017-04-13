@@ -53,6 +53,13 @@ class Mass:
         deltaY = y - self.y
         deltaZ = z - self.z
         return G * self.mass * deltaZ / pow(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ, 1.5)
+    
+    def d2p_dx2(self, x, y, z):
+        deltaX = x - self.x
+        deltaY = y - self.y
+        deltaZ = z - self.z
+        return -2.0 * G * self.mass * (deltaX*deltaX - deltaY*deltaY - deltaZ*deltaZ) \
+            / pow(deltaX*deltaX + deltaY*deltaY + deltaZ*deltaZ, 2.5)
 
 
 class Rotation:
@@ -78,7 +85,10 @@ class Rotation:
 
     def dp_dz(self, x, y, z):
         return 0
-
+    
+    def d2p_dx2(self, x, y, z):
+        return -self.angular_speed * self.angular_speed
+        
 
 class MeshGenerator:
 
@@ -218,6 +228,109 @@ class RotatingStar(MeshGenerator):
         return (self.points, self.faces)
     
     
+class BinaryStar(MeshGenerator):
+    
+    def __init__(self, \
+            mass1=STELLAR_MASS, radius1=STELLAR_RADIUS, \
+            mass2=STELLAR_MASS, radius2=STELLAR_RADIUS, \
+            angular_speed=0.0001):
+
+        super(BinaryStar, self).__init__()
+
+        separation = pow(G*(mass1+mass2) / (angular_speed*angular_speed), 1.0/3.0)
+        self.mass1 = Mass(mass1, x=-separation*mass2 / (mass1+mass2))
+        self.mass2 = Mass(mass2, x=separation*mass1 / (mass1+mass2))
+        self.rotation = Rotation(angular_speed, 0, 0, 0)
+        
+        self.surface_potential1 = self.potential(self.mass1.x, 0, radius1)
+        self.surface_potential2 = self.potential(self.mass2.x, 0, radius2)
+
+        self.__find_lagrange_points()
+        self.__adjust_surface_potentials()
+        
+    def __find_lagrange_points(self):
+        self.l1x = solve(
+            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.d2p_dx2(x, 0, 0), \
+            0)
+        self.l1_potential = self.potential(self.l1x, 0, 0)
+
+        self.l2x = solve(
+            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.d2p_dx2(x, 0, 0), \
+            (3.0*self.mass1.x - self.l1x) / 2.0)
+        self.l2_potential = self.potential(self.l2x, 0, 0)
+
+        self.l3x = solve(
+            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.d2p_dx2(x, 0, 0), \
+            (3.0*self.mass2.x + self.l1x) / 2.0)
+        self.l3_potential = self.potential(self.l3x, 0, 0)
+            
+    def __adjust_surface_potentials(self):
+        self.common_envelope = self.surface_potential1 > self.l1_potential and self.surface_potential2 > self.l1_potential
+        if self.common_envelope:
+            print('Stars share a common envelope')
+            if self.surface_potential1 > self.surface_potential2:
+                self.surface_potential2 = self.surface_potential1
+            else:
+                self.surface_potential1 = self.surface_potential2
+                
+        elif self.surface_potential1 > MASS_LOSS_FACTOR * self.l1_potential:
+            print('Star A loses mass through L1 point')
+            self.surface_potential1 = MASS_LOSS_FACTOR * self.l1_potential
+                
+        elif self.surface_potential2 > MASS_LOSS_FACTOR * self.l1_potential:
+            print('Star B loses mass through L1 point')
+            self.surface_potential2 = MASS_LOSS_FACTOR * self.l1_potential
+            
+        if self.common_envelope:
+            if self.surface_potential1 > MASS_LOSS_FACTOR * self.l2_potential:
+                print('Common envelope loses mass through L2 point')
+            if self.surface_potential2 > MASS_LOSS_FACTOR * self.l3_potential:
+                print('Common envelope loses mass through L3 point')
+            self.surface_potential1 = min(self.surface_potential1, MASS_LOSS_FACTOR * self.l2_potential, MASS_LOSS_FACTOR * self.l3_potential)
+            self.surface_potential2 = min(self.surface_potential2, MASS_LOSS_FACTOR * self.l2_potential, MASS_LOSS_FACTOR * self.l3_potential)
+
+    def __str__(self):
+        str = 'Star A: mass {:.2f} position {:.2f} surface {:f}\n'.format(
+            self.mass1.mass / STELLAR_MASS, \
+            self.mass1.x / STELLAR_RADIUS, \
+            self.surface_potential1)
+        str += 'Star B: mass {:.2f} position {:.2f} surface {:f}\n'.format(
+            self.mass2.mass / STELLAR_MASS, \
+            self.mass2.x / STELLAR_RADIUS, \
+            self.surface_potential2)
+        str += 'L1 position: {:.2f} potential {:f}\n'.format(
+            self.l1x / STELLAR_RADIUS, \
+            self.l1_potential)
+        str += 'L2 position: {:.2f} potential {:f}\n'.format(
+            self.l2x / STELLAR_RADIUS, \
+            self.l2_potential)
+        str += 'L3 position: {:.2f} potential {:f}\n'.format(
+            self.l3x / STELLAR_RADIUS, \
+            self.l3_potential)
+        return str
+
+    def potential(self, x, y, z):
+        return self.mass1.potential(x, y, z) + self.mass2.potential(x, y, z) + self.rotation.potential(x, y, z)
+
+    def dp_dx(self, x, y, z):
+        return self.mass1.dp_dx(x, y, z) + self.mass2.dp_dx(x, y, z) + self.rotation.dp_dx(x, y, z)
+
+    def dp_dy(self, x, y, z):
+        return self.mass1.dp_dy(x, y, z) + self.mass2.dp_dy(x, y, z) + self.rotation.dp_dy(x, y, z)
+
+    def dp_dz(self, x, y, z):
+        return self.mass1.dp_dz(x, y, z) + self.mass2.dp_dz(x, y, z) + self.rotation.dp_dz(x, y, z)
+
+    def d2p_dx2(self, x, y, z):
+        return self.mass1.d2p_dx2(x, y, z) + self.mass2.d2p_dx2(x, y, z) + self.rotation.d2p_dx2(x, y, z)
+
+    def surface(self, x, y, z):
+        return self.potential(x, y, z) - self.surface_potential
+    
+    
 def add_mesh(name, points, faces):
 
     mesh = bpy.data.meshes.new(name)
@@ -331,8 +444,13 @@ def unregister():
 if __name__ == "__main__":
 #    register()
 
-#    rs = RotatingStar(angular_speed=0.0000025) # Sol
-#    rs = RotatingStar(mass=6.7*STELLAR_MASS, radius=7.3*STELLAR_RADIUS, angular_speed=0.0000399) # Achernar
-    rs = RotatingStar(mass=3.8*STELLAR_MASS, radius=2.5*STELLAR_RADIUS, angular_speed=0.000162) # Regulus
-    (points, faces) = rs.make_mesh(10)
+#    s = RotatingStar(angular_speed=0.0000025) # Sol
+#    s = RotatingStar(mass=6.7*STELLAR_MASS, radius=7.3*STELLAR_RADIUS, angular_speed=0.0000399) # Achernar
+    s = RotatingStar(mass=3.8*STELLAR_MASS, radius=2.5*STELLAR_RADIUS, angular_speed=0.000162) # Regulus
+#    s = BinaryStar(\
+#        mass1=0.95*STELLAR_MASS, radius1=0.88*STELLAR_RADIUS, \
+#        mass2=0.55*STELLAR_MASS, radius2=0.266*STELLAR_RADIUS, \
+#        angular_speed=0.0002716)
+    print(s)
+    (points, faces) = s.make_mesh(10)
     add_mesh("Star", points, faces)
