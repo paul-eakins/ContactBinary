@@ -95,6 +95,7 @@ class MeshGenerator:
     def __init__(self):
         self.points = []
         self.faces = []
+        self.offset = 0
             
     def add_point(self, x, y, z):
         n = len(self.points)
@@ -102,23 +103,24 @@ class MeshGenerator:
         self.points.append(p)
         return n
     
-    def add_row_points(self, x, rz, n, offset):
+    def add_row_points(self, x, rz, n, offset=0):
         row = []
+        self.offset += offset
         
         max_z = solve(
-            lambda z : self.surface(x, 0, z), \
+            lambda z : self.potential(x, 0, z) - self.surface_potential, \
             lambda z : self.dp_dz(x, 0, z), \
             rz)
             
         total = 5*n
         i = 0
         while i < total:
-            angle = pi*(2*i+offset) / total
+            angle = self.offset + 2*pi*i / total
             z = max_z * cos(angle)
             y_guess = 0.99 * max_z * sin(angle)
             if y_guess < -1 or y_guess > 1:
                 y = solve(
-                    lambda y : self.surface(x, y, z), \
+                    lambda y : self.potential(x, y, z) - self.surface_potential, \
                     lambda y : self.dp_dy(x, y, z), \
                     y_guess)
             else:
@@ -153,18 +155,18 @@ class MeshGenerator:
             
 
     def open_cone(self, x0, rx, rz, n):
-        self.row0 = [self.add_point(-rx / STELLAR_RADIUS, 0, 0)]
+        self.row0 = [self.add_point((x0-rx) / STELLAR_RADIUS, 0, 0)]
         for i in range(1, n+1):
             theta = i*pi / (3*n)
             x = x0 - rx * cos(theta)
-            row1 = self.add_row_points(x, rz, i, 0)
+            row1 = self.add_row_points(x, rz, i)
             self.add_row_faces(self.row0, row1)
             self.row0 = row1
             
-    def cylinder(self, x0, x1, rz, n):
+    def cylinder(self, x0, x1, rz, n, offset=1):
         for i in range(1, n+1):
             x = ((n-i)*x0 + i*x1) / n
-            row1 = self.add_row_points(x, rz, n, i)
+            row1 = self.add_row_points(x, rz, n, pi/(5*n))
             self.add_row_faces(self.row0, row1)
             self.row0 = row1
             
@@ -172,10 +174,10 @@ class MeshGenerator:
         for i in range(1, n):
             theta = (2*n + i) * pi / (3*n)
             x = x0 - rx * cos(theta)
-            row1 = self.add_row_points(x, rz, n-i, n-i)
+            row1 = self.add_row_points(x, rz, n-i)
             self.add_row_faces(self.row0, row1)
             self.row0 = row1
-        row1 = [self.add_point(rx / STELLAR_RADIUS, 0, 0)]
+        row1 = [self.add_point((x0+rx) / STELLAR_RADIUS, 0, 0)]
         self.add_row_faces(self.row0, row1)
         self.row0 = None
                   
@@ -211,13 +213,10 @@ class RotatingStar(MeshGenerator):
     def dp_dz(self, x, y, z):
         return self.mass.dp_dz(x, y, z) + self.rotation.dp_dz(x, y, z)
 
-    def surface(self, x, y, z):
-        return self.potential(x, y, z) - self.surface_potential
-
     def make_mesh(self, n):
         
         max_x = solve(
-            lambda x : self.surface(x, 0, 0), \
+            lambda x : self.potential(x, 0, 0) - self.surface_potential, \
             lambda x : self.dp_dx(x, 0, 0), \
             self.initial_estimate)
             
