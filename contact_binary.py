@@ -9,11 +9,11 @@ STELLAR_MASS       = 1.98855E30   # kg
 STELLAR_LUMINOSITY = 3.846E26     # W 
 
 def solve(fn, fn_dash, x=0, iteration_limit=20, accuracy=1):
-    print('solve')
+#    print('solve')
     y = fn(x)
     while iteration_limit > 0 and (y < -accuracy or y > accuracy):
         y_dash = fn_dash(x)
-        print('- x=', x, ' y=', y, ' y\'=', y_dash)
+#        print('- x=', x, ' y=', y, ' y\'=', y_dash)
         x = x - y / y_dash
         y = fn(x)
         iteration_limit -= 1
@@ -91,20 +91,19 @@ class MeshGenerator:
         return n
     
     def add_row_points(self, x, n, offset):
-        print('add_row_points(', x, ', ', n, ', ', offset)
         row = []
         
         max_z = solve(
             lambda z : self.surface(x, 0, z), \
             lambda z : self.dp_dz(x, 0, z), \
-            self.radius)
+            self.initial_estimate)
             
         total = 5*n
         i = 0
         while i < total:
             angle = pi*(2*i+offset) / total
             z = max_z * cos(angle)
-            y_guess = max_z * sin(angle)
+            y_guess = 0.99 * max_z * sin(angle)
             if y_guess < -1 or y_guess > 1:
                 y = solve(
                     lambda y : self.surface(x, y, z), \
@@ -114,9 +113,6 @@ class MeshGenerator:
                 y = 0
             row.append(self.add_point(x / STELLAR_RADIUS, y / STELLAR_RADIUS, z / STELLAR_RADIUS))
             i += 1
-       
-        print()   
-        print(row)
        
         return row
 
@@ -149,17 +145,19 @@ class RotatingStar(MeshGenerator):
     def __init__(self, mass=STELLAR_MASS, radius=STELLAR_RADIUS, angular_speed=0):
 
         super(RotatingStar, self).__init__()
+                        
+        self.mass = Mass(mass)
+        self.rotation = Rotation(angular_speed)
+        self.initial_estimate = radius
         
-        if (angular_speed > 0):
-            stationary_orbit = pow(G*mass/(angular_speed*angular_speed), 1.0/3.0)
-            if (stationary_orbit <= 1.5 * radius):
-                raise ValueError('Star will fly apart due to high rotation speed')
-                
-        self.mass = Mass(mass, 0, 0, 0)
-        self.rotation = Rotation(angular_speed, 0, 0, 0)
-        self.radius = radius
-        
-        self.surface_potential = self.potential(0, 0, radius)
+        self.surface_potential = self.mass.potential(0, 0, radius)
+        if angular_speed > 0:
+            synchronous_orbit = pow(G*mass/(angular_speed*angular_speed), 1.0/3.0)
+            synchronous_potential = self.potential(synchronous_orbit, 0, 0)
+            if self.surface_potential > 1.001 * synchronous_potential:
+                print('Mass lost due to high rotation speed')
+                self.surface_potential = 1.001 * synchronous_potential
+                self.initial_estimate = synchronous_orbit * 0.6
 
     def potential(self, x, y, z):
         return self.mass.potential(x, y, z) + self.rotation.potential(x, y, z)
@@ -181,7 +179,7 @@ class RotatingStar(MeshGenerator):
         max_x = solve(
             lambda x : self.surface(x, 0, 0), \
             lambda x : self.dp_dx(x, 0, 0), \
-            self.radius)
+            self.initial_estimate)
 
         row0 = [self.add_point(-max_x / STELLAR_RADIUS, 0, 0)]
         for i in range(1, n+1):
