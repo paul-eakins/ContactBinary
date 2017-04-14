@@ -1,5 +1,5 @@
 import bpy
-from bpy.props import FloatProperty
+import bpy.props
 from math import *
 
 
@@ -9,6 +9,7 @@ STELLAR_MASS       = 1.98855E30   # kg
 STELLAR_LUMINOSITY = 3.846E26     # W 
 
 MASS_LOSS_FACTOR   = 1.001
+DEFAULT_SUBDIVISIONS = 12
 
 def solve(fn, fn_dash, x=0, iteration_limit=20, accuracy=1):
 #    print('solve')
@@ -96,6 +97,7 @@ class MeshGenerator:
         self.points = []
         self.faces = []
         self.offset = 0
+        self.messages = []
             
     def add_point(self, x, y, z):
         n = len(self.points)
@@ -108,8 +110,8 @@ class MeshGenerator:
         self.offset += offset
         
         max_z = solve(
-            lambda z : self.potential(x, 0, z) - self.surface_potential, \
-            lambda z : self.dp_dz(x, 0, z), \
+            lambda z : self.potential(x, 0, z) - self.surface_potential,
+            lambda z : self.dp_dz(x, 0, z),
             rz)
             
         total = 5*n
@@ -120,8 +122,8 @@ class MeshGenerator:
             y_guess = 0.99 * max_z * sin(angle)
             if y_guess < -1 or y_guess > 1:
                 y = solve(
-                    lambda y : self.potential(x, y, z) - self.surface_potential, \
-                    lambda y : self.dp_dy(x, y, z), \
+                    lambda y : self.potential(x, y, z) - self.surface_potential,
+                    lambda y : self.dp_dy(x, y, z),
                     y_guess)
             else:
                 y = 0
@@ -197,7 +199,7 @@ class RotatingStar(MeshGenerator):
             synchronous_orbit = pow(G*mass/(angular_speed*angular_speed), 1.0/3.0)
             synchronous_potential = self.potential(synchronous_orbit, 0, 0)
             if self.surface_potential > MASS_LOSS_FACTOR * synchronous_potential:
-                print('Mass lost at equator due to high rotation speed')
+                self.messages.append('Mass lost at equator')
                 self.surface_potential = MASS_LOSS_FACTOR * synchronous_potential
                 self.initial_estimate = synchronous_orbit * 0.6
 
@@ -216,8 +218,8 @@ class RotatingStar(MeshGenerator):
     def make_mesh(self, n):
         
         max_x = solve(
-            lambda x : self.potential(x, 0, 0) - self.surface_potential, \
-            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.potential(x, 0, 0) - self.surface_potential,
+            lambda x : self.dp_dx(x, 0, 0),
             self.initial_estimate)
             
         self.open_cone(0, max_x, self.initial_estimate, n)     
@@ -230,8 +232,8 @@ class RotatingStar(MeshGenerator):
 class BinaryStar(MeshGenerator):
     
     def __init__(self, \
-            mass1=STELLAR_MASS, radius1=STELLAR_RADIUS, \
-            mass2=STELLAR_MASS, radius2=STELLAR_RADIUS, \
+            mass1=STELLAR_MASS, radius1=STELLAR_RADIUS,
+            mass2=STELLAR_MASS, radius2=STELLAR_RADIUS,
             angular_speed=0.0001):
 
         super(BinaryStar, self).__init__()
@@ -266,12 +268,12 @@ class BinaryStar(MeshGenerator):
 
     def __make_spheroid(self, x0, initial_estimate, n):
         min_x = x0 - solve(
-            lambda x : self.potential(x, 0, 0) - self.surface_potential, \
-            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.potential(x, 0, 0) - self.surface_potential,
+            lambda x : self.dp_dx(x, 0, 0),
             x0 - initial_estimate)
         max_x = solve(
-            lambda x : self.potential(x, 0, 0) -self.surface_potential, \
-            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.potential(x, 0, 0) -self.surface_potential,
+            lambda x : self.dp_dx(x, 0, 0),
             x0 + initial_estimate) - x0
             
         self.open_cone(x0, min_x, initial_estimate, n)     
@@ -280,12 +282,12 @@ class BinaryStar(MeshGenerator):
         
     def __make_extended_spheroid(self, n):
         min_x = self.mass1.x - solve(
-            lambda x : self.potential(x, 0, 0) - self.surface_potential, \
-            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.potential(x, 0, 0) - self.surface_potential,
+            lambda x : self.dp_dx(x, 0, 0),
             self.mass1.x - self.initial_estimate1)
         max_x = solve(
-            lambda x : self.potential(x, 0, 0) - self.surface_potential, \
-            lambda x : self.dp_dx(x, 0, 0), \
+            lambda x : self.potential(x, 0, 0) - self.surface_potential,
+            lambda x : self.dp_dx(x, 0, 0),
             self.mass2.x + self.initial_estimate2) - self.mass2.x
 
         m1_l1_x = (self.mass1.x + 2*self.l1x) / 3
@@ -298,20 +300,20 @@ class BinaryStar(MeshGenerator):
     
     def __find_lagrange_points(self):
         self.l1x = solve(
-            lambda x : self.dp_dx(x, 0, 0), \
-            lambda x : self.d2p_dx2(x, 0, 0), \
+            lambda x : self.dp_dx(x, 0, 0),
+            lambda x : self.d2p_dx2(x, 0, 0),
             0)
         self.l1_potential = self.potential(self.l1x, 0, 0)
 
         self.l2x = solve(
-            lambda x : self.dp_dx(x, 0, 0), \
-            lambda x : self.d2p_dx2(x, 0, 0), \
+            lambda x : self.dp_dx(x, 0, 0),
+            lambda x : self.d2p_dx2(x, 0, 0),
             2.0*self.mass1.x - self.l1x)
         self.l2_potential = self.potential(self.l2x, 0, 0)
 
         self.l3x = solve(
-            lambda x : self.dp_dx(x, 0, 0), \
-            lambda x : self.d2p_dx2(x, 0, 0), \
+            lambda x : self.dp_dx(x, 0, 0),
+            lambda x : self.d2p_dx2(x, 0, 0),
             2.0*self.mass2.x - self.l1x)
         self.l3_potential = self.potential(self.l3x, 0, 0)
             
@@ -349,21 +351,21 @@ class BinaryStar(MeshGenerator):
 
     def __str__(self):
         str = 'Star A: mass {:.2f} position {:.2f} surface {:f}\n'.format(
-            self.mass1.mass / STELLAR_MASS, \
-            self.mass1.x / STELLAR_RADIUS, \
+            self.mass1.mass / STELLAR_MASS,
+            self.mass1.x / STELLAR_RADIUS,
             self.surface_potential1 / 1e9)
         str += 'Star B: mass {:.2f} position {:.2f} surface {:f}\n'.format(
-            self.mass2.mass / STELLAR_MASS, \
-            self.mass2.x / STELLAR_RADIUS, \
+            self.mass2.mass / STELLAR_MASS,
+            self.mass2.x / STELLAR_RADIUS,
             self.surface_potential2 / 1e9)
         str += 'L1 position: {:.2f} potential {:f}\n'.format(
-            self.l1x / STELLAR_RADIUS, \
+            self.l1x / STELLAR_RADIUS,
             self.l1_potential / 1e9)
         str += 'L2 position: {:.2f} potential {:f}\n'.format(
-            self.l2x / STELLAR_RADIUS, \
+            self.l2x / STELLAR_RADIUS,
             self.l2_potential / 1e9)
         str += 'L3 position: {:.2f} potential {:f}\n'.format(
-            self.l3x / STELLAR_RADIUS, \
+            self.l3x / STELLAR_RADIUS,
             self.l3_potential / 1e9)
         return str
 
@@ -385,6 +387,8 @@ class BinaryStar(MeshGenerator):
     
 def add_mesh(name, points, faces):
 
+    bpy.context.user_preferences.edit.use_global_undo = False
+
     mesh = bpy.data.meshes.new(name)
     mesh.from_pydata(points, [], faces)
     mesh.update()
@@ -393,41 +397,93 @@ def add_mesh(name, points, faces):
     obj.location = bpy.context.scene.cursor_location
     bpy.context.scene.objects.link(obj)
 
+    bpy.context.user_preferences.edit.use_global_undo = True
+
 
 class StarOperator(bpy.types.Operator):
     bl_idname = "mesh.star_add"
     bl_label = "Star"
-        
-    mass = FloatProperty(
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    mass = bpy.props.FloatProperty(
         name = "Mass",
         description = "Mass in solar masses",
+        default = 1,
         min = 0.0001,
         max = 1000,
-        default = 1)
+        step = 1)
         
-    radius = FloatProperty(
-        name = "Radius",
-        description = "Radius in solar radii",
+    radius = bpy.props.FloatProperty(
+        name = "Polar radius",
+        description = "Polar radius in solar radii",
+        default = 1,
         min = 0.0001,
         max = 1000,
-        default = 1)
+        step = 1)
         
-    spin = FloatProperty(
-        name = "Spin",
+    rotation = bpy.props.FloatProperty(
+        name = "Rotation period",
         description = "Rotation period in hours (0 for no rotation)",
+        default = 5.2,
         min = 0,
         max = 1000,
-        default = 24,
-        precision = 3,
-        step = 0.0001)
+        step = 1,
+        precision = 3)
+        
+    subdivisions = bpy.props.IntProperty(
+        name = "Subdivisions",
+        default = DEFAULT_SUBDIVISIONS,
+        min = 1,
+        max = 100)
+        
+    preset = bpy.props.EnumProperty(
+        name = "Presets",
+        items = (
+            ("0", "Custom", ""),
+            ("Regulus", "Regulus", ""),
+            ("Achernar", "Achernar", ""),
+            ("Sol", "Sol", "")),
+        default="0")
+        
+    preset_values = {
+        "Regulus": [3.8, 2.5, 10.773],
+        "Achernar": [6.7, 7.3, 43.743],
+        "Sol": [1, 1, 744]}
+        
+    messages = []
+        
+    def draw(self, context):
+        self.layout.prop(self, "preset")
+        self.layout.separator()
+        self.layout.prop(self, "mass")
+        self.layout.prop(self, "radius")
+        self.layout.prop(self, "rotation")
+        self.layout.separator()
+        self.layout.prop(self, "subdivisions")
+        self.layout.separator()
+        for i in self.messages:
+            self.layout.label(text=i)
         
     def execute(self, context):
-        angular_speed = spin
+
+        if self.preset in self.preset_values:
+            preset_value = self.preset_values[self.preset]
+            self.mass = preset_value[0]
+            self.radius = preset_value[1]
+            self.rotation = preset_value[2]
+            
+        angular_speed = self.rotation
         if angular_speed != 0:
-            angular_speed = 2 * pi * 3600 / angular_speed
-        star = RotatingStar(mass * STELLAR_MASS, angular_speed)
-        self.__make_row_points([], star.surface, 0, 1, 0)
-#        add_mesh(None, None)
+            angular_speed = 2*pi / (3600*angular_speed)
+        star = RotatingStar(
+            mass = self.mass*STELLAR_MASS,
+            radius = self.radius*STELLAR_RADIUS,
+            angular_speed = angular_speed)
+        self.messages = star.messages        
+        
+        (points, faces) = star.make_mesh(self.subdivisions)
+        add_mesh("Star", points, faces)
+
         return {'FINISHED'}
            
        
@@ -435,37 +491,41 @@ class BinaryStarOperator(bpy.types.Operator):
     bl_idname = "mesh.binary_star_add"
     bl_label = "Binary star"
 
-    mass1 = FloatProperty(
+    mass1 = bpy.props.FloatProperty(
         name = "Mass 1",
         min = 0.0001,
         max = 1000,
         default = 1)
         
-    radius1 = FloatProperty(
+    radius1 = bpy.props.FloatProperty(
         name = "Radius 1",
         min = 0.0001,
         max = 1000,
         default = 1)
         
-    mass2 = FloatProperty(
+    mass2 = bpy.props.FloatProperty(
         name = "Mass 2",
         min = 0.0001,
         max = 1000,
         default = 1)
         
-    radius2 = FloatProperty(
+    radius2 = bpy.props.FloatProperty(
         name = "Radius 2",
         min = 0.0001,
         max = 1000,
         default = 1)
         
-    separation = FloatProperty(
+    separation = bpy.props.FloatProperty(
         name = "Separation",
         min = 0.0001,
         max = 1000,
         default = 1)
         
     def execute(self, context):
+#    s = BinaryStar(\
+#        mass1=0.95*STELLAR_MASS, radius1=0.88*STELLAR_RADIUS, \
+#        mass2=0.55*STELLAR_MASS, radius2=0.66*STELLAR_RADIUS, \
+#        angular_speed=0.00033) #angular_speed=0.0002716)
         None
                     
         
@@ -494,15 +554,15 @@ def unregister():
 
 
 if __name__ == "__main__":
-#    register()
+    register()
 
 #    s = RotatingStar(angular_speed=0.0000025) # Sol
 #    s = RotatingStar(mass=6.7*STELLAR_MASS, radius=7.3*STELLAR_RADIUS, angular_speed=0.0000399) # Achernar
 #    s = RotatingStar(mass=3.8*STELLAR_MASS, radius=2.5*STELLAR_RADIUS, angular_speed=0.000162) # Regulus
-    s = BinaryStar(\
-        mass1=0.95*STELLAR_MASS, radius1=0.88*STELLAR_RADIUS, \
-        mass2=0.55*STELLAR_MASS, radius2=0.66*STELLAR_RADIUS, \
-        angular_speed=0.00033) #angular_speed=0.0002716)
-    (points, faces) = s.make_mesh(15)
-    add_mesh("Star", points, faces)
-    print(s)
+#    s = BinaryStar(\
+#        mass1=0.95*STELLAR_MASS, radius1=0.88*STELLAR_RADIUS, \
+#        mass2=0.55*STELLAR_MASS, radius2=0.66*STELLAR_RADIUS, \
+#        angular_speed=0.00033) #angular_speed=0.0002716)
+#    (points, faces) = s.make_mesh(15)
+#    add_mesh("Star", points, faces)
+#    print(s)
