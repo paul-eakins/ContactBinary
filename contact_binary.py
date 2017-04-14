@@ -12,11 +12,9 @@ MASS_LOSS_FACTOR   = 1.001
 DEFAULT_SUBDIVISIONS = 12
 
 def solve(fn, fn_dash, x=0, iteration_limit=20, accuracy=1):
-#    print('solve')
     y = fn(x)
     while iteration_limit > 0 and (y < -accuracy or y > accuracy):
         y_dash = fn_dash(x)
-#        print('- x=', x, ' y=', y, ' y\'=', y_dash)
         x = x - y / y_dash
         y = fn(x)
         iteration_limit -= 1
@@ -108,7 +106,11 @@ class MeshGenerator:
     def add_row_points(self, x, rz, n, offset=0):
         row = []
         self.offset += offset
-        
+
+        iterations = 20
+        while iterations > 0 and self.potential(x, 0, rz) > self.surface_potential:
+            rz /= 2
+            iterations -= 1
         max_z = solve(
             lambda z : self.potential(x, 0, z) - self.surface_potential,
             lambda z : self.dp_dz(x, 0, z),
@@ -119,7 +121,7 @@ class MeshGenerator:
         while i < total:
             angle = self.offset + 2*pi*i / total
             z = max_z * cos(angle)
-            y_guess = 0.99 * max_z * sin(angle)
+            y_guess = 0.9 * max_z * sin(angle)
             if y_guess < -1 or y_guess > 1:
                 y = solve(
                     lambda y : self.potential(x, y, z) - self.surface_potential,
@@ -133,7 +135,6 @@ class MeshGenerator:
         return row
 
     def add_row_faces(self, row0, row1):
-#        print('add_row_faces len(row0) = ',len(row0), ' len(row1) = ',len(row1))
         m = len(row0)
         n = len(row1)
         if m > 1: mc = m
@@ -145,14 +146,12 @@ class MeshGenerator:
         while i < mc or j < nc:
             ip = (2*i+1) * nc
             jp = (2*j+1) * mc
-#            print('- i=', i, ' j=', j, ' ip=', ip, ' jp=', jp)
             if ip > jp:
                 face = [row0[i%m], row1[j%n], row1[(j+1)%n]]
                 j += 1
             else:
                 face = [row0[i%m], row1[j%n], row0[(i+1)%m]]
                 i += 1
- #           print('  - ', face)
             self.faces.append(face)
             
 
@@ -192,7 +191,7 @@ class RotatingStar(MeshGenerator):
                         
         self.mass = Mass(mass)
         self.rotation = Rotation(angular_speed)
-        self.initial_estimate = radius
+        self.radius = radius
         
         self.surface_potential = self.potential(0, 0, radius)
         if angular_speed > 0:
@@ -201,7 +200,7 @@ class RotatingStar(MeshGenerator):
             if self.surface_potential > MASS_LOSS_FACTOR * synchronous_potential:
                 self.messages.append('Mass lost at equator')
                 self.surface_potential = MASS_LOSS_FACTOR * synchronous_potential
-                self.initial_estimate = synchronous_orbit * 0.6
+                self.radius = 0.6*synchronous_orbit 
 
     def potential(self, x, y, z):
         return self.mass.potential(x, y, z) + self.rotation.potential(x, y, z)
@@ -217,14 +216,15 @@ class RotatingStar(MeshGenerator):
 
     def make_mesh(self, n):
         
+        initial_estimate = self.radius
         max_x = solve(
             lambda x : self.potential(x, 0, 0) - self.surface_potential,
             lambda x : self.dp_dx(x, 0, 0),
-            self.initial_estimate)
+            initial_estimate)
             
-        self.open_cone(0, max_x, self.initial_estimate, n)     
-        self.cylinder(-max_x * cos(pi/3), max_x * cos(pi/3), self.initial_estimate, n)
-        self.close_cone(0, max_x, self.initial_estimate, n)
+        self.open_cone(0, max_x, initial_estimate, n)     
+        self.cylinder(-max_x * cos(pi/3), max_x * cos(pi/3), initial_estimate, n)
+        self.close_cone(0, max_x, initial_estimate, n)
             
         return (self.points, self.faces)
     
@@ -240,9 +240,9 @@ class BinaryStar(MeshGenerator):
 
         separation = pow(G*(mass1+mass2) / (angular_speed*angular_speed), 1.0/3.0)
         self.mass1 = Mass(mass1, x=-separation*mass2 / (mass1+mass2))
-        self.initial_estimate1 = radius1
+        self.radius1 = radius1
         self.mass2 = Mass(mass2, x=separation*mass1 / (mass1+mass2))
-        self.initial_estimate2 = radius2
+        self.radius2 = radius2
         self.rotation = Rotation(angular_speed, 0, 0, 0)
         
         self.surface_potential1 = self.potential(self.mass1.x, 0, radius1)
@@ -253,16 +253,28 @@ class BinaryStar(MeshGenerator):
         
     def make_mesh(self, n):
         
+        initial_estimate1 = self.radius1
+        if initial_estimate1 > self.mass1.x - self.l3x:
+            initial_estimate1 = self.mass1.x - self.l3x
+        while self.potential(self.mass1.x - initial_estimate1, 0, 0) > self.surface_potential1:
+            initial_estimate1 /= 2.0
+            
+        initial_estimate2 = self.radius2
+        if initial_estimate2 > self.l2x - self.mass2.x:
+            initial_estimate2 = self.l2x - self.mass2.x
+        while self.potential(self.mass2.x + initial_estimate2, 0, 0) > self.surface_potential2:
+            initial_estimate2 /= 2.0    
+            
         if self.common_envelope:
             self.surface_potential = self.surface_potential1
-            self.__make_extended_spheroid(n)
+            self.__make_extended_spheroid(initial_estimate1, initial_estimate2, n)
             
         else:
             self.surface_potential = self.surface_potential1
-            self.__make_spheroid(self.mass1.x, self.initial_estimate1, n)
+            self.__make_spheroid(self.mass1.x, initial_estimate1, n)
             
             self.surface_potential = self.surface_potential2
-            self.__make_spheroid(self.mass2.x, self.initial_estimate2, n)
+            self.__make_spheroid(self.mass2.x, initial_estimate2, n)
                         
         return (self.points, self.faces)
 
@@ -280,29 +292,36 @@ class BinaryStar(MeshGenerator):
         self.cylinder(x0-min_x * cos(pi/3), x0+max_x * cos(pi/3), initial_estimate, n)
         self.close_cone(x0, max_x, initial_estimate, n)
         
-    def __make_extended_spheroid(self, n):
+    def __make_extended_spheroid(self, initial_estimate1, initial_estimate2, n):
         min_x = self.mass1.x - solve(
             lambda x : self.potential(x, 0, 0) - self.surface_potential,
             lambda x : self.dp_dx(x, 0, 0),
-            self.mass1.x - self.initial_estimate1)
+            self.mass1.x - initial_estimate1)
         max_x = solve(
             lambda x : self.potential(x, 0, 0) - self.surface_potential,
             lambda x : self.dp_dx(x, 0, 0),
-            self.mass2.x + self.initial_estimate2) - self.mass2.x
+            self.mass2.x + initial_estimate2) - self.mass2.x
 
-        m1_l1_x = (self.mass1.x + 2*self.l1x) / 3
-        l1_m2_x = (2*self.l1x + self.mass2.x) / 3
-        self.open_cone(self.mass1.x, min_x, self.initial_estimate1, n)     
-        self.cylinder(self.mass1.x-min_x * cos(pi/3), m1_l1_x, self.initial_estimate1, n)
-        self.cylinder(m1_l1_x, l1_m2_x, self.initial_estimate1, n)
-        self.cylinder(l1_m2_x, self.mass2.x+max_x * cos(pi/3), self.initial_estimate1, n)
-        self.close_cone(self.mass2.x, max_x, self.initial_estimate2, n)
+        s1 = self.l1x - self.mass1.x
+        s2 = self.mass2.x - self.l1x
+        if s1 < s2:
+            j1x = self.l1x - s1 / 3
+            j2x = self.l1x + s1 / 3
+        else:
+            j1x = self.l1x - s2 / 3
+            j2x = self.l1x + s2 / 3
+        
+        self.open_cone(self.mass1.x, min_x, min_x / 2, n)     
+        self.cylinder(self.mass1.x-min_x * cos(pi/3), j1x, min_x / 2, n)
+        self.cylinder(j1x, j2x, min(min_x, max_x), n)
+        self.cylinder(j2x, self.mass2.x+max_x * cos(pi/3), max_x / 2, n)
+        self.close_cone(self.mass2.x, max_x, max_x / 2, n)
     
     def __find_lagrange_points(self):
         self.l1x = solve(
             lambda x : self.dp_dx(x, 0, 0),
             lambda x : self.d2p_dx2(x, 0, 0),
-            0)
+            (self.mass1.x*self.mass2.mass + self.mass2.x*self.mass1.mass) / (self.mass1.mass + self.mass2.mass))
         self.l1_potential = self.potential(self.l1x, 0, 0)
 
         self.l2x = solve(
@@ -316,8 +335,15 @@ class BinaryStar(MeshGenerator):
             lambda x : self.d2p_dx2(x, 0, 0),
             2.0*self.mass1.x - self.l1x)
         self.l3_potential = self.potential(self.l3x, 0, 0)
-            
+
     def __adjust_surface_potentials(self):
+        if self.surface_potential1 > MASS_LOSS_FACTOR * self.l3_potential:
+            self.messages.append('Star A loses mass at L3 point')
+            self.surface_potential1 = MASS_LOSS_FACTOR * self.l3_potential
+        if self.surface_potential2 > MASS_LOSS_FACTOR * self.l2_potential:
+            self.messages.append('Star B loses mass at L2 point')
+            self.surface_potential2 = MASS_LOSS_FACTOR * self.l2_potential
+    
         self.common_envelope = self.surface_potential1 > self.l1_potential and self.surface_potential2 > self.l1_potential
         if self.common_envelope:
             self.messages.append('Stars share a common envelope')
@@ -327,18 +353,18 @@ class BinaryStar(MeshGenerator):
                 self.surface_potential2 = self.surface_potential1
                 
         elif self.surface_potential1 > MASS_LOSS_FACTOR * self.l1_potential:
-            self.messages.append('Star A loses mass through L1 point')
+            self.messages.append('Star A loses mass at L1 point')
             self.surface_potential1 = MASS_LOSS_FACTOR * self.l1_potential
                 
         elif self.surface_potential2 > MASS_LOSS_FACTOR * self.l1_potential:
-            self.messages.append('Star B loses mass through L1 point')
+            self.messages.append('Star B loses mass at L1 point')
             self.surface_potential2 = MASS_LOSS_FACTOR * self.l1_potential
             
         if self.common_envelope:
             if self.surface_potential1 > MASS_LOSS_FACTOR * self.l3_potential:
-                self.messages.append('Mass lost at L3 point')
+                self.messages.append('Common envelope loses mass at L3 point')
             if self.surface_potential2 > MASS_LOSS_FACTOR * self.l2_potential:
-                self.messages.append('Mass lost at L2 point')
+                self.messages.append('Common envelope loses mass at L2 point')
                 
             self.surface_potential1 = min(
                 self.surface_potential1,
@@ -347,12 +373,7 @@ class BinaryStar(MeshGenerator):
             self.surface_potential2 = min(
                 self.surface_potential2,
                 MASS_LOSS_FACTOR * self.l2_potential,
-                MASS_LOSS_FACTOR * self.l3_potential)
-
-        while self.potential(self.mass1.x - self.initial_estimate1, 0, 0) > self.surface_potential1:
-            self.initial_estimate1 /= 2.0        
-        while self.potential(self.mass2.x + self.initial_estimate2, 0, 0) > self.surface_potential2:
-            self.initial_estimate2 /= 2.0        
+                MASS_LOSS_FACTOR * self.l3_potential)    
 
     def potential(self, x, y, z):
         return self.mass1.potential(x, y, z) + self.mass2.potential(x, y, z) + self.rotation.potential(x, y, z)
@@ -496,7 +517,7 @@ class BinaryStarOperator(bpy.types.Operator):
     massB = bpy.props.FloatProperty(
         name = "Mass B",
         description = "Mass of star B in solar masses",
-        default = 1,
+        default = 0.3,
         min = 0.0001,
         max = 1000,
         step = 1)
@@ -504,7 +525,7 @@ class BinaryStarOperator(bpy.types.Operator):
     radiusB = bpy.props.FloatProperty(
         name = "Polar radius B",
         description = "Polar radius of star B in solar radii",
-        default = 1,
+        default = 0.5,
         min = 0.0001,
         max = 1000,
         step = 1)
@@ -512,7 +533,7 @@ class BinaryStarOperator(bpy.types.Operator):
     rotation = bpy.props.FloatProperty(
         name = "Rotation period",
         description = "Rotation period in hours (0 for no rotation)",
-        default = 5.5,
+        default = 6,
         min = 0,
         max = 1000,
         step = 1,
