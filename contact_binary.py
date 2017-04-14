@@ -308,66 +308,51 @@ class BinaryStar(MeshGenerator):
         self.l2x = solve(
             lambda x : self.dp_dx(x, 0, 0),
             lambda x : self.d2p_dx2(x, 0, 0),
-            2.0*self.mass1.x - self.l1x)
+            2.0*self.mass2.x - self.l1x)
         self.l2_potential = self.potential(self.l2x, 0, 0)
 
         self.l3x = solve(
             lambda x : self.dp_dx(x, 0, 0),
             lambda x : self.d2p_dx2(x, 0, 0),
-            2.0*self.mass2.x - self.l1x)
+            2.0*self.mass1.x - self.l1x)
         self.l3_potential = self.potential(self.l3x, 0, 0)
             
     def __adjust_surface_potentials(self):
         self.common_envelope = self.surface_potential1 > self.l1_potential and self.surface_potential2 > self.l1_potential
         if self.common_envelope:
-            print('Stars share a common envelope')
+            self.messages.append('Stars share a common envelope')
             if self.surface_potential1 > self.surface_potential2:
                 self.surface_potential1 = self.surface_potential2
             else:
                 self.surface_potential2 = self.surface_potential1
                 
         elif self.surface_potential1 > MASS_LOSS_FACTOR * self.l1_potential:
-            print('Star A loses mass through L1 point')
+            self.messages.append('Star A loses mass through L1 point')
             self.surface_potential1 = MASS_LOSS_FACTOR * self.l1_potential
                 
         elif self.surface_potential2 > MASS_LOSS_FACTOR * self.l1_potential:
-            print('Star B loses mass through L1 point')
+            self.messages.append('Star B loses mass through L1 point')
             self.surface_potential2 = MASS_LOSS_FACTOR * self.l1_potential
             
         if self.common_envelope:
-            if self.surface_potential1 > MASS_LOSS_FACTOR * self.l2_potential:
-                print('Common envelope loses mass through L2 point')
-            if self.surface_potential2 > MASS_LOSS_FACTOR * self.l3_potential:
-                print('Common envelope loses mass through L3 point')
-            self.surface_potential1 = min(self.surface_potential1, MASS_LOSS_FACTOR * self.l2_potential, MASS_LOSS_FACTOR * self.l3_potential)
-            self.surface_potential2 = min(self.surface_potential2, MASS_LOSS_FACTOR * self.l2_potential, MASS_LOSS_FACTOR * self.l3_potential)
+            if self.surface_potential1 > MASS_LOSS_FACTOR * self.l3_potential:
+                self.messages.append('Mass lost at L3 point')
+            if self.surface_potential2 > MASS_LOSS_FACTOR * self.l2_potential:
+                self.messages.append('Mass lost at L2 point')
+                
+            self.surface_potential1 = min(
+                self.surface_potential1,
+                MASS_LOSS_FACTOR * self.l2_potential,
+                MASS_LOSS_FACTOR * self.l3_potential)
+            self.surface_potential2 = min(
+                self.surface_potential2,
+                MASS_LOSS_FACTOR * self.l2_potential,
+                MASS_LOSS_FACTOR * self.l3_potential)
 
         while self.potential(self.mass1.x - self.initial_estimate1, 0, 0) > self.surface_potential1:
-            print('reducing initial_estimate1')
             self.initial_estimate1 /= 2.0        
         while self.potential(self.mass2.x + self.initial_estimate2, 0, 0) > self.surface_potential2:
-            print('reducing initial_estimate2')
             self.initial_estimate2 /= 2.0        
-
-    def __str__(self):
-        str = 'Star A: mass {:.2f} position {:.2f} surface {:f}\n'.format(
-            self.mass1.mass / STELLAR_MASS,
-            self.mass1.x / STELLAR_RADIUS,
-            self.surface_potential1 / 1e9)
-        str += 'Star B: mass {:.2f} position {:.2f} surface {:f}\n'.format(
-            self.mass2.mass / STELLAR_MASS,
-            self.mass2.x / STELLAR_RADIUS,
-            self.surface_potential2 / 1e9)
-        str += 'L1 position: {:.2f} potential {:f}\n'.format(
-            self.l1x / STELLAR_RADIUS,
-            self.l1_potential / 1e9)
-        str += 'L2 position: {:.2f} potential {:f}\n'.format(
-            self.l2x / STELLAR_RADIUS,
-            self.l2_potential / 1e9)
-        str += 'L3 position: {:.2f} potential {:f}\n'.format(
-            self.l3x / STELLAR_RADIUS,
-            self.l3_potential / 1e9)
-        return str
 
     def potential(self, x, y, z):
         return self.mass1.potential(x, y, z) + self.mass2.potential(x, y, z) + self.rotation.potential(x, y, z)
@@ -490,44 +475,110 @@ class StarOperator(bpy.types.Operator):
 class BinaryStarOperator(bpy.types.Operator):
     bl_idname = "mesh.binary_star_add"
     bl_label = "Binary star"
-
-    mass1 = bpy.props.FloatProperty(
-        name = "Mass 1",
+    bl_options = {'REGISTER', 'UNDO'}
+    
+    massA = bpy.props.FloatProperty(
+        name = "Mass A",
+        description = "Mass of star A in solar masses",
+        default = 1,
         min = 0.0001,
         max = 1000,
-        default = 1)
+        step = 1)
         
-    radius1 = bpy.props.FloatProperty(
-        name = "Radius 1",
+    radiusA = bpy.props.FloatProperty(
+        name = "Polar radius A",
+        description = "Polar radius of star A in solar radii",
+        default = 1,
         min = 0.0001,
         max = 1000,
-        default = 1)
+        step = 1)
         
-    mass2 = bpy.props.FloatProperty(
-        name = "Mass 2",
+    massB = bpy.props.FloatProperty(
+        name = "Mass B",
+        description = "Mass of star B in solar masses",
+        default = 1,
         min = 0.0001,
         max = 1000,
-        default = 1)
+        step = 1)
         
-    radius2 = bpy.props.FloatProperty(
-        name = "Radius 2",
+    radiusB = bpy.props.FloatProperty(
+        name = "Polar radius B",
+        description = "Polar radius of star B in solar radii",
+        default = 1,
         min = 0.0001,
         max = 1000,
-        default = 1)
+        step = 1)
         
-    separation = bpy.props.FloatProperty(
-        name = "Separation",
-        min = 0.0001,
+    rotation = bpy.props.FloatProperty(
+        name = "Rotation period",
+        description = "Rotation period in hours (0 for no rotation)",
+        default = 5.5,
+        min = 0,
         max = 1000,
-        default = 1)
+        step = 1,
+        precision = 3)
+        
+    subdivisions = bpy.props.IntProperty(
+        name = "Subdivisions",
+        default = DEFAULT_SUBDIVISIONS,
+        min = 1,
+        max = 100)
+        
+    preset = bpy.props.EnumProperty(
+        name = "Presets",
+        items = (
+            ("0", "Custom", ""),
+            ("i Bootis", "i Bootis", ""),
+            ("Algol", "Algol", "")),
+        default="0")
+        
+    preset_values = {
+        "i Bootis": [0.95, 0.88, 0.55, 0.66, 6.426],
+        "Algol": [3.17, 2.73, 0.7, 3.48, 68.816]}
+        
+    messages = []
+        
+    def draw(self, context):
+        self.layout.prop(self, "preset")
+        self.layout.separator()
+        self.layout.prop(self, "massA")
+        self.layout.prop(self, "radiusA")
+        self.layout.separator()
+        self.layout.prop(self, "massB")
+        self.layout.prop(self, "radiusB")
+        self.layout.separator()
+        self.layout.prop(self, "rotation")
+        self.layout.separator()
+        self.layout.prop(self, "subdivisions")
+        self.layout.separator()
+        for i in self.messages:
+            self.layout.label(text=i)
         
     def execute(self, context):
-#    s = BinaryStar(\
-#        mass1=0.95*STELLAR_MASS, radius1=0.88*STELLAR_RADIUS, \
-#        mass2=0.55*STELLAR_MASS, radius2=0.66*STELLAR_RADIUS, \
-#        angular_speed=0.00033) #angular_speed=0.0002716)
-        None
-                    
+
+        if self.preset in self.preset_values:
+            preset_value = self.preset_values[self.preset]
+            self.massA = preset_value[0]
+            self.radiusA = preset_value[1]
+            self.massB = preset_value[2]
+            self.radiusB = preset_value[3]
+            self.rotation = preset_value[4]
+            
+        angular_speed = self.rotation
+        if angular_speed != 0:
+            angular_speed = 2*pi / (3600*angular_speed)
+        star = BinaryStar(
+            mass1 = self.massA*STELLAR_MASS,
+            radius1 = self.radiusA*STELLAR_RADIUS,
+            mass2 = self.massB*STELLAR_MASS,
+            radius2 = self.radiusB*STELLAR_RADIUS,
+            angular_speed = angular_speed)
+        self.messages = star.messages        
+        
+        (points, faces) = star.make_mesh(self.subdivisions)
+        add_mesh("Star", points, faces)
+
+        return {'FINISHED'}                    
         
 class Stars_add_menu(bpy.types.Menu):
     bl_idname = "Stars_add_menu"
